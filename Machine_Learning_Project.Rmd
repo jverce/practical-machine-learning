@@ -3,8 +3,8 @@ title: "Machine Learning Project"
 author: "J Vercellone"
 date: '2018-02-02'
 output:
-  md_document:
-    variant: markdown_github
+  html_document: default
+  md_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -28,13 +28,26 @@ In this section we'll be performing a data cleanup since the original files cont
 
 We start by loading both the training and testing data and storing it in the `training` and `testing` variables, respectively:
 ```{r load}
-training <- read.csv('./pml-training.csv')
-testing <- read.csv('./pml-testing.csv')
+training <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
+testing <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv')
+```
+
+We also take the chance to load the libraries now:
+```{r library, results='hide'}
+library(caret)
+library(randomForest)
 ```
 
 ### Glimpse
 
 We take a quick glimpse at our data to find some inconsistent/improper variables to discard. _Keep in mind that we're hiding the results from this report since it's too verbose, but they're still reproducible_.
+
+```{r colnames, results='hide'}
+colnames(training)
+colnames(testing)
+```
+
+We can see that the `classe` variable is missing from the testing set, which means that we won't be able to evaluate the models we create unless we partition the training set and work with that.
 
 ```{r head, results='hide'}
 head(training)
@@ -74,14 +87,21 @@ for (col in names(training)) {
   nas <- sum(is.na(training[, col])) > 0
   div0 <- any(grep("DIV/0", training[, col]))
   if (nas || div0) {
-    training <- subset(training, select=(!names(training) %in% c(col)))
+    training <- subset(training, select=-c(col))
   }
 }
 ```
 
 Finally we see how many variables are left in our training set:
 ```{r dim}
-dim(training)
+dim(training)[2]
+```
+
+We now proceed with the data partition:
+```{r createDataPartition}
+inTrain <- createDataPartition(training$classe, p = .7, list = FALSE)
+trainingSet <- training[inTrain, ]
+testingSet <- training[-inTrain, ]
 ```
 
 ## Build Model
@@ -95,19 +115,20 @@ We try with the following `mtry` values:
 - 54 (maximum)
 
 ```{r randomForest}
-library(randomForest)
-randomForest(classe ~ ., data = training, mtry = 2)
-randomForest(classe ~ ., data = training, mtry = 27)
-randomForest(classe ~ ., data = training, mtry = 54)
+randomForest(classe ~ ., data = trainingSet, mtry = 2)
+randomForest(classe ~ ., data = trainingSet, mtry = 27)
+randomForest(classe ~ ., data = trainingSet, mtry = 54)
 ```
 
 We can see that the best performance is achieved with `mtry = 27`. Since the value is below the max number we're basically discarding variables which reduces the chance of overfitting.
 
 We can now do a prediction to check if the output looks consistent:
 ```{r predict}
-library(caret)
-fit <- randomForest(classe ~ ., data = training, mtry = 27)
-predict(fit, testing)
+fit <- randomForest(classe ~ ., data = trainingSet, mtry = 27)
+predictions <- predict(fit, testingSet)
+
+cm <- confusionMatrix(predictions, testingSet$classe)
+print(cm)
 ```
 
 As per the **final quiz**, the result is 100% accurate.
