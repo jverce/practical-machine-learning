@@ -138,6 +138,20 @@ $(document).ready(function () {
 <p>We start by loading both the training and testing data and storing it in the <code>training</code> and <code>testing</code> variables, respectively:</p>
 <pre class="r"><code>training &lt;- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
 testing &lt;- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv')</code></pre>
+<p>We also take the chance to load the libraries now:</p>
+<pre class="r"><code>library(caret)</code></pre>
+<pre><code>## Loading required package: lattice</code></pre>
+<pre><code>## Loading required package: ggplot2</code></pre>
+<pre><code>## Warning in as.POSIXlt.POSIXct(Sys.time()): unknown timezone 'zone/tz/2017c.
+## 1.0/zoneinfo/America/Vancouver'</code></pre>
+<pre class="r"><code>library(randomForest)</code></pre>
+<pre><code>## randomForest 4.6-12</code></pre>
+<pre><code>## Type rfNews() to see new features/changes/bug fixes.</code></pre>
+<pre><code>## 
+## Attaching package: 'randomForest'</code></pre>
+<pre><code>## The following object is masked from 'package:ggplot2':
+## 
+##     margin</code></pre>
 </div>
 <div id="glimpse" class="section level3">
 <h3>Glimpse</h3>
@@ -154,7 +168,7 @@ colnames(testing)</code></pre>
 <li><code>new_window</code>: this variable presents inconsistencies in its values and it’s better to leave it out.</li>
 <li>Timestamp variables: these are variables that contain <code>timestamp</code> in their name. They do not provide information about the subject’s movement and so they shouldn’t affect our prediction.</li>
 <li><code>NA</code> variables: these variables have undefined values and since we don’t have any way to supply them we have no option but to remove them.</li>
-<li><code>#DIV/0!</code> variables: looks like variables that experienced some strange issue during their recording and we can’t rely on their values, hence we’ll be removing them.</li>
+<li><code>#DIV/0!</code> variables: looks like variables that experienced some strange issue during their recording and we can’t rely on their values, hence we’ll be removing them (we can identify them as “factor” variables).</li>
 </ul>
 </div>
 <div id="variable-removal" class="section level3">
@@ -172,23 +186,17 @@ training &lt;- subset(training, select = -c(new_window))
 # Remove timestamp vars
 training &lt;- subset(training, select = -grep('timestamp', colnames(training)))
 
-# Remove `NA` and `#DIV/0!` vars
-for (col in names(training)) {
-  nas &lt;- sum(is.na(training[, col])) &gt; 0
-  div0 &lt;- any(grep(&quot;DIV/0&quot;, training[, col]))
-  if (nas || div0) {
-    training &lt;- subset(training, select=(!names(training) %in% c(col)))
-  }
-}</code></pre>
+# Remove `NA` vars
+training &lt;- training[, (colSums(is.na(training)) == 0)]
+
+# Remove `#DIV/0!` vars (be careful not to remove the output var which is a factor)
+predictors &lt;- which(lapply(training, class) %in% c('integer', 'numeric'))
+y &lt;- which(colnames(training) == 'classe')
+training &lt;- training[, c(predictors, y)]</code></pre>
 <p>Finally we see how many variables are left in our training set:</p>
 <pre class="r"><code>dim(training)[2]</code></pre>
 <pre><code>## [1] 54</code></pre>
 <p>We now proceed with the data partition:</p>
-<pre class="r"><code>library(caret)</code></pre>
-<pre><code>## Loading required package: lattice</code></pre>
-<pre><code>## Loading required package: ggplot2</code></pre>
-<pre><code>## Warning in as.POSIXlt.POSIXct(Sys.time()): unknown timezone 'zone/tz/2017c.
-## 1.0/zoneinfo/America/Vancouver'</code></pre>
 <pre class="r"><code>inTrain &lt;- createDataPartition(training$classe, p = .7, list = FALSE)
 trainingSet &lt;- training[inTrain, ]
 testingSet &lt;- training[-inTrain, ]</code></pre>
@@ -201,16 +209,8 @@ testingSet &lt;- training[-inTrain, ]</code></pre>
 <ul>
 <li>2 (minimum)</li>
 <li>27 (half the max)</li>
-<li>54 (maximum)</li>
+<li>53 (maximum)</li>
 </ul>
-<pre class="r"><code>library(randomForest)</code></pre>
-<pre><code>## randomForest 4.6-12</code></pre>
-<pre><code>## Type rfNews() to see new features/changes/bug fixes.</code></pre>
-<pre><code>## 
-## Attaching package: 'randomForest'</code></pre>
-<pre><code>## The following object is masked from 'package:ggplot2':
-## 
-##     margin</code></pre>
 <pre class="r"><code>randomForest(classe ~ ., data = trainingSet, mtry = 2)</code></pre>
 <pre><code>## 
 ## Call:
@@ -219,14 +219,14 @@ testingSet &lt;- training[-inTrain, ]</code></pre>
 ##                      Number of trees: 500
 ## No. of variables tried at each split: 2
 ## 
-##         OOB estimate of  error rate: 0.58%
+##         OOB estimate of  error rate: 0.6%
 ## Confusion matrix:
 ##      A    B    C    D    E  class.error
-## A 3905    0    0    0    1 0.0002560164
-## B    9 2645    4    0    0 0.0048908954
-## C    0   19 2377    0    0 0.0079298831
-## D    0    0   36 2213    3 0.0173179396
-## E    0    0    1    6 2518 0.0027722772</code></pre>
+## A 3905    1    0    0    0 0.0002560164
+## B   11 2641    6    0    0 0.0063957863
+## C    0   17 2377    2    0 0.0079298831
+## D    0    0   39 2212    1 0.0177619893
+## E    0    0    0    5 2520 0.0019801980</code></pre>
 <pre class="r"><code>randomForest(classe ~ ., data = trainingSet, mtry = 27)</code></pre>
 <pre><code>## 
 ## Call:
@@ -235,35 +235,33 @@ testingSet &lt;- training[-inTrain, ]</code></pre>
 ##                      Number of trees: 500
 ## No. of variables tried at each split: 27
 ## 
-##         OOB estimate of  error rate: 0.27%
+##         OOB estimate of  error rate: 0.25%
 ## Confusion matrix:
 ##      A    B    C    D    E  class.error
-## A 3904    1    0    0    1 0.0005120328
-## B    6 2647    4    1    0 0.0041384500
-## C    0    6 2390    0    0 0.0025041736
-## D    0    0   11 2239    2 0.0057726465
-## E    0    1    0    4 2520 0.0019801980</code></pre>
-<pre class="r"><code>randomForest(classe ~ ., data = trainingSet, mtry = 54)</code></pre>
-<pre><code>## Warning in randomForest.default(m, y, ...): invalid mtry: reset to within
-## valid range</code></pre>
+## A 3905    1    0    0    0 0.0002560164
+## B   11 2645    2    0    0 0.0048908954
+## C    0    7 2389    0    0 0.0029215359
+## D    0    0    7 2244    1 0.0035523979
+## E    0    0    0    6 2519 0.0023762376</code></pre>
+<pre class="r"><code>randomForest(classe ~ ., data = trainingSet, mtry = 53)</code></pre>
 <pre><code>## 
 ## Call:
-##  randomForest(formula = classe ~ ., data = trainingSet, mtry = 54) 
+##  randomForest(formula = classe ~ ., data = trainingSet, mtry = 53) 
 ##                Type of random forest: classification
 ##                      Number of trees: 500
 ## No. of variables tried at each split: 53
 ## 
-##         OOB estimate of  error rate: 0.61%
+##         OOB estimate of  error rate: 0.36%
 ## Confusion matrix:
-##      A    B    C    D    E class.error
-## A 3900    4    1    1    0 0.001536098
-## B   15 2631    7    5    0 0.010158014
-## C    0   10 2378    8    0 0.007512521
-## D    1    2   16 2231    2 0.009325044
-## E    0    2    1    9 2513 0.004752475</code></pre>
-<p>We can see that the best performance is achieved with <code>mtry = 27</code>. Since the value is below the max number we’re basically discarding variables which reduces the chance of overfitting.</p>
+##      A    B    C    D    E  class.error
+## A 3904    1    0    0    1 0.0005120328
+## B   11 2640    6    0    1 0.0067720090
+## C    0   11 2383    2    0 0.0054257095
+## D    0    2    7 2243    0 0.0039964476
+## E    1    0    0    7 2517 0.0031683168</code></pre>
+<p>We can see that the best performance is achieved with <code>mtry = 27</code>. However, even with <code>mtry = 2</code> we have a great performance as well, with a simpler processing. Hence we’ll be choosing this last option for our algorithm.</p>
 <p>We can now do a prediction to check if the output looks consistent:</p>
-<pre class="r"><code>fit &lt;- randomForest(classe ~ ., data = trainingSet, mtry = 27)
+<pre class="r"><code>fit &lt;- randomForest(classe ~ ., data = trainingSet, mtry = 2)
 predictions &lt;- predict(fit, testingSet)
 
 cm &lt;- confusionMatrix(predictions, testingSet$classe)
@@ -272,33 +270,41 @@ print(cm)</code></pre>
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 1674    1    0    0    0
-##          B    0 1137    0    0    2
-##          C    0    1 1026    3    0
-##          D    0    0    0  961    1
-##          E    0    0    0    0 1079
+##          A 1673    5    0    0    0
+##          B    0 1134    3    0    0
+##          C    0    0 1023   11    0
+##          D    0    0    0  952    2
+##          E    1    0    0    1 1080
 ## 
 ## Overall Statistics
 ##                                           
-##                Accuracy : 0.9986          
-##                  95% CI : (0.9973, 0.9994)
+##                Accuracy : 0.9961          
+##                  95% CI : (0.9941, 0.9975)
 ##     No Information Rate : 0.2845          
 ##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16       
 ##                                           
-##                   Kappa : 0.9983          
+##                   Kappa : 0.9951          
 ##  Mcnemar's Test P-Value : NA              
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            1.0000   0.9982   1.0000   0.9969   0.9972
-## Specificity            0.9998   0.9996   0.9992   0.9998   1.0000
-## Pos Pred Value         0.9994   0.9982   0.9961   0.9990   1.0000
-## Neg Pred Value         1.0000   0.9996   1.0000   0.9994   0.9994
+## Sensitivity            0.9994   0.9956   0.9971   0.9876   0.9982
+## Specificity            0.9988   0.9994   0.9977   0.9996   0.9996
+## Pos Pred Value         0.9970   0.9974   0.9894   0.9979   0.9982
+## Neg Pred Value         0.9998   0.9989   0.9994   0.9976   0.9996
 ## Prevalence             0.2845   0.1935   0.1743   0.1638   0.1839
-## Detection Rate         0.2845   0.1932   0.1743   0.1633   0.1833
-## Detection Prevalence   0.2846   0.1935   0.1750   0.1635   0.1833
-## Balanced Accuracy      0.9999   0.9989   0.9996   0.9983   0.9986</code></pre>
+## Detection Rate         0.2843   0.1927   0.1738   0.1618   0.1835
+## Detection Prevalence   0.2851   0.1932   0.1757   0.1621   0.1839
+## Balanced Accuracy      0.9991   0.9975   0.9974   0.9936   0.9989</code></pre>
+<p>We can calculate the <strong>out-of-sample</strong> error based on the confusion matrix data we just obtained:</p>
+<pre class="r"><code>1 - cm$overall[[1]]</code></pre>
+<pre><code>## [1] 0.003908241</code></pre>
+<p>As predicted, this error is very low so we’re confident about performing predictions in the original test set. This can also be verified with against the <strong>final quiz</strong> of the course:</p>
+<pre class="r"><code>predict(fit, testing)</code></pre>
+<pre><code>##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E</code></pre>
 <p>As per the <strong>final quiz</strong>, the result is 100% accurate.</p>
 </div>
 <div id="conclusions" class="section level2">

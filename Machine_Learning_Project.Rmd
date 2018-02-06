@@ -3,8 +3,8 @@ title: "Machine Learning Project"
 author: "J Vercellone"
 date: '2018-02-02'
 output:
-  html_document: default
   md_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -64,7 +64,7 @@ Based on the output we can find the following variables to remove:
 - `new_window`: this variable presents inconsistencies in its values and it's better to leave it out.
 - Timestamp variables: these are variables that contain `timestamp` in their name. They do not provide information about the subject's movement and so they shouldn't affect our prediction.
 - `NA` variables: these variables have undefined values and since we don't have any way to supply them we have no option but to remove them.
-- `#DIV/0!` variables: looks like variables that experienced some strange issue during their recording and we can't rely on their values, hence we'll be removing them.
+- `#DIV/0!` variables: looks like variables that experienced some strange issue during their recording and we can't rely on their values, hence we'll be removing them (we can identify them as "factor" variables).
 
 ### Variable Removal
 
@@ -82,14 +82,13 @@ training <- subset(training, select = -c(new_window))
 # Remove timestamp vars
 training <- subset(training, select = -grep('timestamp', colnames(training)))
 
-# Remove `NA` and `#DIV/0!` vars
-for (col in names(training)) {
-  nas <- sum(is.na(training[, col])) > 0
-  div0 <- any(grep("DIV/0", training[, col]))
-  if (nas || div0) {
-    training <- subset(training, select=-c(col))
-  }
-}
+# Remove `NA` vars
+training <- training[, (colSums(is.na(training)) == 0)]
+
+# Remove `#DIV/0!` vars (be careful not to remove the output var which is a factor)
+predictors <- which(lapply(training, class) %in% c('integer', 'numeric'))
+y <- which(colnames(training) == 'classe')
+training <- training[, c(predictors, y)]
 ```
 
 Finally we see how many variables are left in our training set:
@@ -112,23 +111,33 @@ We try with the following `mtry` values:
 
 - 2 (minimum)
 - 27 (half the max)
-- 54 (maximum)
+- 53 (maximum)
 
 ```{r randomForest}
 randomForest(classe ~ ., data = trainingSet, mtry = 2)
 randomForest(classe ~ ., data = trainingSet, mtry = 27)
-randomForest(classe ~ ., data = trainingSet, mtry = 54)
+randomForest(classe ~ ., data = trainingSet, mtry = 53)
 ```
 
-We can see that the best performance is achieved with `mtry = 27`. Since the value is below the max number we're basically discarding variables which reduces the chance of overfitting.
+We can see that the best performance is achieved with `mtry = 27`. However, even with `mtry = 2` we have a great performance as well, with a simpler processing. Hence we'll be choosing this last option for our algorithm.
 
 We can now do a prediction to check if the output looks consistent:
 ```{r predict}
-fit <- randomForest(classe ~ ., data = trainingSet, mtry = 27)
+fit <- randomForest(classe ~ ., data = trainingSet, mtry = 2)
 predictions <- predict(fit, testingSet)
 
 cm <- confusionMatrix(predictions, testingSet$classe)
 print(cm)
+```
+
+We can calculate the **out-of-sample** error based on the confusion matrix data we just obtained:
+```{r out-of-sample}
+1 - cm$overall[[1]]
+```
+
+As predicted, this error is very low so we're confident about performing predictions in the original test set. This can also be verified with against the **final quiz** of the course:
+```{r test-predict}
+predict(fit, testing)
 ```
 
 As per the **final quiz**, the result is 100% accurate.

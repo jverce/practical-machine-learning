@@ -30,14 +30,45 @@ our analysis.
 We start by loading both the training and testing data and storing it in
 the `training` and `testing` variables, respectively:
 
-    training <- read.csv('./pml-training.csv')
-    testing <- read.csv('./pml-testing.csv')
+    training <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
+    testing <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv')
+
+We also take the chance to load the libraries now:
+
+    library(caret)
+
+    ## Loading required package: lattice
+
+    ## Loading required package: ggplot2
+
+    ## Warning in as.POSIXlt.POSIXct(Sys.time()): unknown timezone 'zone/tz/2017c.
+    ## 1.0/zoneinfo/America/Vancouver'
+
+    library(randomForest)
+
+    ## randomForest 4.6-12
+
+    ## Type rfNews() to see new features/changes/bug fixes.
+
+    ## 
+    ## Attaching package: 'randomForest'
+
+    ## The following object is masked from 'package:ggplot2':
+    ## 
+    ##     margin
 
 ### Glimpse
 
 We take a quick glimpse at our data to find some inconsistent/improper
 variables to discard. *Keep in mind that we're hiding the results from
 this report since it's too verbose, but they're still reproducible*.
+
+    colnames(training)
+    colnames(testing)
+
+We can see that the `classe` variable is missing from the testing set,
+which means that we won't be able to evaluate the models we create
+unless we partition the training set and work with that.
 
     head(training)
 
@@ -59,7 +90,8 @@ Based on the output we can find the following variables to remove:
     remove them.
 -   `#DIV/0!` variables: looks like variables that experienced some
     strange issue during their recording and we can't rely on their
-    values, hence we'll be removing them.
+    values, hence we'll be removing them (we can identify them as
+    "factor" variables).
 
 ### Variable Removal
 
@@ -78,20 +110,25 @@ variables:
     # Remove timestamp vars
     training <- subset(training, select = -grep('timestamp', colnames(training)))
 
-    # Remove `NA` and `#DIV/0!` vars
-    for (col in names(training)) {
-      nas <- sum(is.na(training[, col])) > 0
-      div0 <- any(grep("DIV/0", training[, col]))
-      if (nas || div0) {
-        training <- subset(training, select=(!names(training) %in% c(col)))
-      }
-    }
+    # Remove `NA` vars
+    training <- training[, (colSums(is.na(training)) == 0)]
+
+    # Remove `#DIV/0!` vars (be careful not to remove the output var which is a factor)
+    predictors <- which(lapply(training, class) %in% c('integer', 'numeric'))
+    y <- which(colnames(training) == 'classe')
+    training <- training[, c(predictors, y)]
 
 Finally we see how many variables are left in our training set:
 
-    dim(training)
+    dim(training)[2]
 
-    ## [1] 19622    54
+    ## [1] 54
+
+We now proceed with the data partition:
+
+    inTrain <- createDataPartition(training$classe, p = .7, list = FALSE)
+    trainingSet <- training[inTrain, ]
+    testingSet <- training[-inTrain, ]
 
 Build Model
 -----------
@@ -108,96 +145,120 @@ We try with the following `mtry` values:
 
 -   2 (minimum)
 -   27 (half the max)
--   54 (maximum)
+-   53 (maximum)
 
 <!-- -->
 
-    library(randomForest)
-
-    ## randomForest 4.6-12
-
-    ## Type rfNews() to see new features/changes/bug fixes.
-
-    randomForest(classe ~ ., data = training, mtry = 2)
+    randomForest(classe ~ ., data = trainingSet, mtry = 2)
 
     ## 
     ## Call:
-    ##  randomForest(formula = classe ~ ., data = training, mtry = 2) 
+    ##  randomForest(formula = classe ~ ., data = trainingSet, mtry = 2) 
     ##                Type of random forest: classification
     ##                      Number of trees: 500
     ## No. of variables tried at each split: 2
     ## 
-    ##         OOB estimate of  error rate: 0.3%
+    ##         OOB estimate of  error rate: 0.43%
     ## Confusion matrix:
     ##      A    B    C    D    E  class.error
-    ## A 5578    2    0    0    0 0.0003584229
-    ## B    7 3788    2    0    0 0.0023702923
-    ## C    0   12 3410    0    0 0.0035067212
-    ## D    0    0   28 3186    2 0.0093283582
-    ## E    0    0    0    5 3602 0.0013861935
+    ## A 3905    0    0    0    1 0.0002560164
+    ## B    8 2647    3    0    0 0.0041384500
+    ## C    0   11 2382    3    0 0.0058430718
+    ## D    0    0   27 2224    1 0.0124333925
+    ## E    0    0    0    5 2520 0.0019801980
 
-    randomForest(classe ~ ., data = training, mtry = 27)
+    randomForest(classe ~ ., data = trainingSet, mtry = 27)
 
     ## 
     ## Call:
-    ##  randomForest(formula = classe ~ ., data = training, mtry = 27) 
+    ##  randomForest(formula = classe ~ ., data = trainingSet, mtry = 27) 
     ##                Type of random forest: classification
     ##                      Number of trees: 500
     ## No. of variables tried at each split: 27
     ## 
-    ##         OOB estimate of  error rate: 0.11%
+    ##         OOB estimate of  error rate: 0.23%
     ## Confusion matrix:
     ##      A    B    C    D    E  class.error
-    ## A 5578    1    0    0    1 0.0003584229
-    ## B    4 3790    2    1    0 0.0018435607
-    ## C    0    5 3417    0    0 0.0014611338
-    ## D    0    0    5 3210    1 0.0018656716
-    ## E    0    0    0    2 3605 0.0005544774
+    ## A 3904    1    0    0    1 0.0005120328
+    ## B    5 2650    3    0    0 0.0030097818
+    ## C    0    3 2392    1    0 0.0016694491
+    ## D    0    0   10 2242    0 0.0044404973
+    ## E    0    1    0    6 2518 0.0027722772
 
-    randomForest(classe ~ ., data = training, mtry = 54)
-
-    ## Warning in randomForest.default(m, y, ...): invalid mtry: reset to within
-    ## valid range
+    randomForest(classe ~ ., data = trainingSet, mtry = 53)
 
     ## 
     ## Call:
-    ##  randomForest(formula = classe ~ ., data = training, mtry = 54) 
+    ##  randomForest(formula = classe ~ ., data = trainingSet, mtry = 53) 
     ##                Type of random forest: classification
     ##                      Number of trees: 500
     ## No. of variables tried at each split: 53
     ## 
-    ##         OOB estimate of  error rate: 0.37%
+    ##         OOB estimate of  error rate: 0.44%
     ## Confusion matrix:
-    ##      A    B    C    D    E  class.error
-    ## A 5576    2    1    0    1 0.0007168459
-    ## B   19 3770    7    1    0 0.0071108770
-    ## C    0    8 3408    6    0 0.0040911748
-    ## D    1    1   15 3197    2 0.0059079602
-    ## E    0    2    0    6 3599 0.0022179096
+    ##      A    B    C    D    E class.error
+    ## A 3900    2    1    0    3 0.001536098
+    ## B   15 2636    6    1    0 0.008276900
+    ## C    0    1 2391    4    0 0.002086811
+    ## D    1    0   15 2235    1 0.007548845
+    ## E    0    2    1    8 2514 0.004356436
 
-We can see that the best performance is achieved with `mtry = 27`. Since
-the value is below the max number we're basically discarding variables
-which reduces the chance of overfitting.
+We can see that the best performance is achieved with `mtry = 27`.
+However, even with `mtry = 2` we have a great performance as well, with
+a simpler processing. Hence we'll be choosing this last option for our
+algorithm.
 
 We can now do a prediction to check if the output looks consistent:
 
-    library(caret)
+    fit <- randomForest(classe ~ ., data = trainingSet, mtry = 2)
+    predictions <- predict(fit, testingSet)
 
-    ## Loading required package: lattice
+    cm <- confusionMatrix(predictions, testingSet$classe)
+    print(cm)
 
-    ## Loading required package: ggplot2
-
+    ## Confusion Matrix and Statistics
     ## 
-    ## Attaching package: 'ggplot2'
-
-    ## The following object is masked from 'package:randomForest':
+    ##           Reference
+    ## Prediction    A    B    C    D    E
+    ##          A 1674    5    0    0    0
+    ##          B    0 1133    7    0    0
+    ##          C    0    1 1019   20    0
+    ##          D    0    0    0  944    1
+    ##          E    0    0    0    0 1081
     ## 
-    ##     margin
+    ## Overall Statistics
+    ##                                          
+    ##                Accuracy : 0.9942         
+    ##                  95% CI : (0.9919, 0.996)
+    ##     No Information Rate : 0.2845         
+    ##     P-Value [Acc > NIR] : < 2.2e-16      
+    ##                                          
+    ##                   Kappa : 0.9927         
+    ##  Mcnemar's Test P-Value : NA             
+    ## 
+    ## Statistics by Class:
+    ## 
+    ##                      Class: A Class: B Class: C Class: D Class: E
+    ## Sensitivity            1.0000   0.9947   0.9932   0.9793   0.9991
+    ## Specificity            0.9988   0.9985   0.9957   0.9998   1.0000
+    ## Pos Pred Value         0.9970   0.9939   0.9798   0.9989   1.0000
+    ## Neg Pred Value         1.0000   0.9987   0.9986   0.9960   0.9998
+    ## Prevalence             0.2845   0.1935   0.1743   0.1638   0.1839
+    ## Detection Rate         0.2845   0.1925   0.1732   0.1604   0.1837
+    ## Detection Prevalence   0.2853   0.1937   0.1767   0.1606   0.1837
+    ## Balanced Accuracy      0.9994   0.9966   0.9944   0.9895   0.9995
 
-    ## Warning in as.POSIXlt.POSIXct(Sys.time()): unknown timezone 'zone/tz/2017c.
-    ## 1.0/zoneinfo/America/Vancouver'
+We can calculate the **out-of-sample** error based on the confusion
+matrix data we just obtained:
 
-    fit <- randomForest(classe ~ ., data = training, mtry = 27)
+    1 - cm$overall[[1]]
+
+    ## [1] 0.0057774
+
+As predicted, this error is very low so we're confident about performing
+predictions in the original test set. This can also be verified with
+against the **final quiz** of the course:
+
     predict(fit, testing)
 
     ##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
